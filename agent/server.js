@@ -365,6 +365,47 @@ function authorized(req, url) {
     return crypto.timingSafeEqual(a, b);
 }
 
+/* failed-token throttle: matters once the agent is reachable from the internet */
+
+const authFailures = new Map();
+const FAILURE_WINDOW = 5 * 60 * 1000;
+const FAILURE_LIMIT = 10;
+const LOCK_TIME = 10 * 60 * 1000;
+
+function clientIp(req) {
+    const cf = req.headers['cf-connecting-ip'];
+    if (typeof cf === 'string' && cf) return cf.trim();
+    const xff = req.headers['x-forwarded-for'];
+    if (typeof xff === 'string' && xff) return xff.split(',')[0].trim();
+    return req.socket.remoteAddress || 'onbekend';
+}
+
+function isLocked(ip) {
+    const entry = authFailures.get(ip);
+    if (!entry) return false;
+    if (Date.now() > entry.until) {
+        authFailures.delete(ip);
+        return false;
+    }
+    return true;
+}
+
+function noteFailure(ip) {
+    const now = Date.now();
+    let entry = authFailures.get(ip);
+    if (!entry) {
+        entry = { hits: [], until: 0 };
+        authFailures.set(ip, entry);
+    }
+    entry.hits = entry.hits.filter(function (t) { return now - t < FAILURE_WINDOW; });
+    entry.hits.push(now);
+    if (entry.hits.length >= FAILURE_LIMIT) {
+        entry.until = now + LOCK_TIME;
+        entry.hits = [];
+        log('te veel foute tokens van ' + ip + ', 10 minuten geblokkeerd');
+    }
+}
+
 const MIME = {
     '.html': 'text/html; charset=utf-8',
     '.js': 'text/javascript; charset=utf-8',
@@ -441,7 +482,13 @@ const server = http.createServer(function (req, res) {
     }
 
     if (route.startsWith('/api/')) {
+        const ip = clientIp(req);
+        if (isLocked(ip)) {
+            sendJson(res, 429, { ok: false, error: 'Te veel foute pogingen. Probeer het over een paar minuten opnieuw.' });
+            return;
+        }
         if (!authorized(req, url)) {
+            noteFailure(ip);
             sendJson(res, 401, { ok: false, error: 'Ongeldige of ontbrekende token.' });
             return;
         }
@@ -557,7 +604,21 @@ server.on('upgrade', function (req, socket) {
         return;
     }
 
-    if (url.pathname !== '/ws' || !authorized(req, url)) {
+    if (url.pathname !== '/ws') {
+        socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+    }
+
+    const upgradeIp = clientIp(req);
+    if (isLocked(upgradeIp)) {
+        socket.write('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+    }
+
+    if (!authorized(req, url)) {
+        noteFailure(upgradeIp);
         socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
         socket.destroy();
         return;

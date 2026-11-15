@@ -1,3 +1,4 @@
 data/
+tools/
 node_modules/
 *.log

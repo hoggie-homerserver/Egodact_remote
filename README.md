@@ -1,65 +1,79 @@
 # Egodact Remote
 
-Herlaad de Egodact-extensie en het `app.egodact.com`-tabblad op je PC vanaf je telefoon.
+Herlaad de Egodact-extensie en het `app.egodact.com`-tabblad op je PC vanaf je telefoon -
+op je eigen wifi of waar je ook bent.
 
 ```
-telefoon (PWA)  --HTTP/WS-->  agent op je PC  --WebSocket-->  companion-extensie  -->  chrome.management
+telefoon (PWA)  --HTTPS-->  tunnel  -->  agent op je PC  --WebSocket-->  companion  -->  chrome.management
 ```
 
-Geen cloud, geen account, geen kosten: alles blijft op je eigen netwerk.
+Geen account, geen cloudopslag, geen kosten.
 
 ## Wat je krijgt
 
 - **Herstart Egodact** - extensie opnieuw inladen en daarna het Egodact-tabblad verversen.
 - **Extensie / Pagina** - los herladen.
 - **Open Egodact** - tabblad focussen of openen als het dicht is.
-- **Alle extensies** - elke extensie die de companion ziet herladen, een voor een of in bulk.
+- **Alle extensies** - elke extensie die de companion ziet herladen.
 - Een lijst met alle extensies op je PC (naam, versie, aan/uit) met een herlaadknop per regel.
 - Laatste acties met resultaat, ook als je telefoon even weg was.
 
-## Eenmalige setup (5 minuten)
+## Snel starten
 
-### 1. Agent starten op je PC
+| Situatie | Commando |
+| --- | --- |
+| Alleen thuis (zelfde wifi) | `start-remote.cmd` |
+| Overal, snelste weg | `start-remote-anywhere.cmd` |
+| Overal, vaste link | Tailscale installeren, dan `start-remote-anywhere.cmd` |
 
-Dubbelklik `start-remote.cmd`, of:
+Beide printen een link met token. Open die op je telefoon.
 
-```powershell
-node agent\server.js
-```
+### Eenmalige setup
 
-De agent print een link met token, bijvoorbeeld:
-
-```
-Telefoon: http://192.168.178.37:8787/?t=21860b1e56cbf1703c56c2b612c2f0b322efadb87053c273
-```
-
-De eerste keer vraagt Windows Firewall om toestemming: sta **privenetwerken** toe.
-
-### 2. Companion-extensie laden
-
-1. Ga naar `chrome://extensions`.
-2. Zet **Ontwikkelaarsmodus** aan.
-3. **Load unpacked** -> kies de map `Egodact_remote\companion`.
-4. De instellingenpagina opent. Plak de **token** uit de agent-console en klik **Opslaan**.
-5. Bij **Test verbinding** hoort te staan: *Verbonden met agent*.
+1. **Agent** - `start-remote.cmd` of `start-remote-anywhere.cmd`. Sta Node.js toe op
+   **privenetwerken** in de Windows Firewall-vraag.
+2. **Companion** - `chrome://extensions` -> Ontwikkelaarsmodus aan -> **Load unpacked** ->
+   map `Egodact_remote\companion`. Plak de token uit de agent-console, **Opslaan**,
+   **Test verbinding**.
+3. **Telefoon** - open de geprinte link in Chrome, menu -> **Toevoegen aan startscherm**.
 
 De companion hoeft daarna alleen ingeschakeld te blijven; je hoeft het tabblad niet open te laten.
 
-### 3. Telefoon koppelen
+## Overal bereikbaar
 
-Open de link met token uit stap 1 in Chrome op je telefoon (zelfde wifi).
-Chrome-menu -> **Toevoegen aan startscherm** voor een app-icoon.
+`start-remote-anywhere.cmd` kiest automatisch:
 
-## Dagelijks gebruik
+### 1. Cloudflare quick tunnel (direct, geen account)
 
-Agent draait -> icoon op je telefoon -> **Herstart Egodact**.
+Werkt meteen: de agent downloadt eenmalig `cloudflared.exe` (ong. 40 MB) naar `tools\`
+en opent een HTTPS-tunnel. Je krijgt een link als:
 
-Werkt de knop niet, dan zegt de statuspil het al:
+```
+https://mooie-woorden-hier.trycloudflare.com/?t=<token>
+```
 
-| Status | Betekenis |
-| --- | --- |
-| **PC online** | companion luistert; opdrachten komen direct aan |
-| **PC offline** | agent onbereikbaar of companion uit; opdrachten wachten in de rij en lopen zodra de companion weer verbindt |
+- Voordeel: geen account, echt HTTPS, dus de PWA installeert netjes op je startscherm.
+- Nadeel: **de link verandert bij elke herstart.** Handig om te testen, minder voor dagelijks.
+- De tunnel is publiek bereikbaar; de token is de enige sleutel. Daarom blokkeert de agent
+  een IP na 10 foute tokens (10 minuten).
+
+### 2. Tailscale (vaste link, aanbevolen voor dagelijks gebruik)
+
+1. Installeer Tailscale op je PC en telefoon en log op beide in met hetzelfde account.
+2. Eenmalig HTTPS aanzetten op de PC:
+
+   ```powershell
+   tailscale serve --bg --https=443 http://127.0.0.1:8787
+   ```
+
+3. Start `start-remote-anywhere.cmd`. Je vaste link is dan:
+
+   ```
+   https://<pc-naam>.<tailnet>.ts.net/?t=<token>
+   ```
+
+Die link blijft gelijk, ook na herstarten, en werkt op 4G/5G en elk ander wifi-netwerk.
+ zonder poorten open te zetten.
 
 ## Hoe het technisch werkt
 
@@ -77,20 +91,22 @@ Werkt de knop niet, dan zegt de statuspil het al:
 ## Bestanden
 
 ```
-agent/server.js        lokale server + WebSocket-relay
-public/                PWA (index.html, app.js, styles.css, sw.js, manifest)
-companion/             MV3-extensie met management/tabs-rechten
-data/token.txt         automatisch aangemaakte token (niet committen)
-start-remote.cmd       dubbelklik-starter voor Windows
+agent/server.js          lokale server + WebSocket-relay
+agent/anywhere.js        tunnel-modus (Tailscale of Cloudflare)
+public/                  PWA (index.html, app.js, styles.css, sw.js, manifest)
+companion/               MV3-extensie met management/tabs-rechten
+data/token.txt           automatisch aangemaakte token (niet committen)
+data/public-url.txt      laatst geprinte publieke link
+tools/cloudflared.exe    eenmalig gedownload door anywhere-modus
+start-remote.cmd         starters
+start-remote-anywhere.cmd
 ```
 
 ## Beperkingen
 
 - Stock Chrome op Android kan **geen** extensies laden; deze app bestuurt je PC vanaf de telefoon.
-- De PWA installeert als echte app op `https` of `localhost`. Over `http://192.168.x.x` maakt
-  Chrome een snelkoppeling naar de pagina; dat werkt prima, alleen zonder service-worker-cache.
-  Wil je echt installeren, zet dan bijvoorbeeld Tailscale Serve of een eigen HTTPS-proxy ervoor.
-- De agent is bedoeld voor je eigen LAN. Zet hem niet rechtstreeks op het internet.
+- De agent is van jou: deel de link met token niet, en gebruik bij voorkeur Tailscale
+  in plaats van de agent rechtstreeks op het internet te zetten.
 
 ## Problemen oplossen
 
@@ -98,6 +114,9 @@ start-remote.cmd       dubbelklik-starter voor Windows
   als je `data/token.txt` verwijdert.
 - **"Companion is offline"** - kijk of de companion-extensie aan staat en of
   `http://127.0.0.1:8787/api/ping` in de browser van de PC antwoordt.
+- **"Te veel foute pogingen"** - de throttle blokkeert je IP 10 minuten na 10 foute tokens.
 - **Poort bezet** - start met `EGODACT_REMOTE_PORT=8788` (en pas het adres in de companion aan).
-- **Extensie niet gevonden** - de knop zoekt op naam (`Egodact`). Hernoem je extensie of gebruik
-  de herlaadknop in de extensielijst, die op id werkt.
+- **Tunnel start niet** - controleer je internet en of `tools\cloudflared.exe` bestaat;
+  verwijder hem anders en start opnieuw.
+- **Extensie niet gevonden** - de knop zoekt op naam (`Egodact`). Gebruik anders de
+  herlaadknop in de extensielijst, die op id werkt.
