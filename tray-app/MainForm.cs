@@ -49,11 +49,13 @@ public sealed class MainForm : Form
     {
         Text = "Egodact Remote";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(700, 520);
-        Size = new Size(760, 560);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        AutoScaleDimensions = new SizeF(96F, 96F);
+        MinimumSize = new Size(720, 540);
+        Size = new Size(780, 580);
         BackColor = Bg;
         ForeColor = TextCol;
-        Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
+        Font = new Font("Segoe UI", 10f, FontStyle.Regular);
 
         _appIcon = LoadAppIcon();
         Icon = _appIcon;
@@ -166,11 +168,16 @@ public sealed class MainForm : Form
     {
         foreach (var p in new[] { Path.Combine(BaseDir, "app.ico"), Path.Combine(BaseDir, "tray-app", "app.ico") })
         {
-            try { if (File.Exists(p)) return new Icon(p); } catch { }
+            try
+            {
+                if (!File.Exists(p)) continue;
+                try { return new Icon(p, new Size(32, 32)); } catch { }
+                return new Icon(p);
+            }
+            catch { }
         }
         return SystemIcons.Shield;
     }
-
     private static Panel MakeCard()
     {
         var p = new Panel { Dock = DockStyle.Top, AutoSize = true, BackColor = PanelBg, Padding = new Padding(12), Margin = new Padding(0, 0, 0, 12) };
@@ -212,7 +219,8 @@ public sealed class MainForm : Form
         return box;
     }
 
-    private void ShowFromTray() { Show(); WindowState = FormWindowState.Normal; Activate(); RefreshStateAsync(); }
+    public void ShowFromTrayPublic() { try { if (InvokeRequired) { BeginInvoke(new Action(ShowFromTrayPublic)); return; } Show(); WindowState = FormWindowState.Normal; Activate(); RefreshStateAsync(); } catch { } }
+    private void ShowFromTray() { ShowFromTrayPublic(); }
     private void HideToTray() { Hide(); try { _tray.ShowBalloonTip(1200, "Egodact Remote", "Draait verder op de achtergrond (systeemvak).", ToolTipIcon.Info); } catch { } }
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
