@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Egodact Remote Companion",
+  "version": "1.0.0",
+  "description": "Luistert op deze PC naar de Egodact Remote-app op je telefoon en herlaadt extensies of tabbladen.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "management",
+    "tabs",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8787/*",
+    "http://localhost:8787/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "action": {
+    "default_title": "Egodact Remote Companion"
+  }
+}
