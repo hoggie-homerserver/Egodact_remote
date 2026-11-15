@@ -19,3 +19,5 @@ Thumbs.db
 tray-app/bin/
 tray-app/obj/
 tray-app/*.user
+
+/EgodactRemoteTray.exe
