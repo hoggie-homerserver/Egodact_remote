@@ -1,10 +1,21 @@
 {
   "name": "egodact-remote",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Phone-to-PC remote for the Egodact extension: reload extensions and tabs from your phone.",
+  "main": "agent/main.js",
+  "bin": "agent/main.js",
   "scripts": {
-    "start": "node agent/server.js"
+    "start": "node agent/main.js",
+    "start:anywhere": "node agent/main.js --anywhere",
+    "start:local": "node agent/main.js",
+    "build:exe": "npx --yes pkg . --targets node18-win-x64 --output dist/EgodactRemote.exe --compress GZip"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*"
+    ],
+    "outputPath": "dist"
   },
   "engines": {
     "node": ">=18"

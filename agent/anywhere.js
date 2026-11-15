@@ -7,10 +7,6 @@
  *
  *   tailscale  -> stable HTTPS name (recommended, needs Tailscale)
  *   cloudflare -> free quick tunnel, no account (URL changes per start)
- *
- *   node agent/anywhere.js            auto: tailscale if installed, else cloudflare
- *   node agent/anywhere.js tailscale
- *   node agent/anywhere.js cloudflare
  */
 
 const { spawn, spawnSync } = require('child_process');
@@ -18,17 +14,18 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const server = require('./server');
 
-const ROOT = path.resolve(__dirname, '..');
+const IS_PKG = server.IS_PKG;
+const ROOT = server.ROOT;
 const TOOLS = path.join(ROOT, 'tools');
-const DATA = path.join(ROOT, 'data');
-const PORT = String(process.env.EGODACT_REMOTE_PORT || 8787);
+const DATA = server.DATA_DIR;
+const PORT = String(process.env.EGODACT_REMOTE_PORT || server.PORT || 8787);
 
 const CF_URL = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe';
 const CF_BIN = path.join(TOOLS, 'cloudflared.exe');
 const URL_FILE = path.join(DATA, 'public-url.txt');
 
-let agent = null;
 let tunnel = null;
 let cloudflaredBin = null;
 let shuttingDown = false;
@@ -42,7 +39,7 @@ function readToken() {
     try {
         return fs.readFileSync(path.join(DATA, 'token.txt'), 'utf8').trim();
     } catch (err) {
-        return '';
+        return server.TOKEN || '';
     }
 }
 
@@ -50,9 +47,7 @@ function copyToClipboard(text) {
     try {
         const child = spawn('cmd', ['/c', 'clip'], { windowsHide: true });
         child.stdin.end(text);
-    } catch (err) {
-        /* clipboard is a nicety, not a requirement */
-    }
+    } catch (err) { /* ignore */ }
 }
 
 function printPublicLink(base, token) {
@@ -69,15 +64,9 @@ function printPublicLink(base, token) {
     try {
         if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
         fs.writeFileSync(URL_FILE, link + '\n', 'utf8');
-    } catch (err) {
-        /* ignore */
-    }
+    } catch (err) { /* ignore */ }
     copyToClipboard(link);
 }
-
-/* ------------------------------------------------------------------ *
- * wait for the agent
- * ------------------------------------------------------------------ */
 
 function ping() {
     return new Promise(function (resolve) {
@@ -98,9 +87,7 @@ async function waitForAgent() {
     return false;
 }
 
-/* ------------------------------------------------------------------ *
- * tailscale
- * ------------------------------------------------------------------ */
+/* tailscale */
 
 function findTailscale() {
     const candidates = [
@@ -118,11 +105,7 @@ function findTailscale() {
 function tailscaleStatus(bin) {
     const res = spawnSync(bin, ['status', '--json'], { windowsHide: true, encoding: 'utf8', timeout: 8000 });
     if (res.status !== 0 || !res.stdout) return null;
-    try {
-        return JSON.parse(res.stdout);
-    } catch (err) {
-        return null;
-    }
+    try { return JSON.parse(res.stdout); } catch (err) { return null; }
 }
 
 function tailscaleServeConfigured(bin) {
@@ -164,9 +147,7 @@ function runTailscale(bin, token) {
     }
 }
 
-/* ------------------------------------------------------------------ *
- * cloudflare quick tunnel
- * ------------------------------------------------------------------ */
+/* cloudflare */
 
 function download(url, dest, redirects) {
     const depth = redirects || 0;
@@ -198,9 +179,7 @@ function download(url, dest, redirects) {
                 }
             });
             res.pipe(out);
-            out.on('finish', function () {
-                out.close(function () { resolve(); });
-            });
+            out.on('finish', function () { out.close(function () { resolve(); }); });
             out.on('error', reject);
         }).on('error', reject).on('timeout', function () {
             reject(new Error('download time-out'));
@@ -210,9 +189,7 @@ function download(url, dest, redirects) {
 
 async function ensureCloudflared() {
     if (fs.existsSync(CF_BIN)) return CF_BIN;
-
     if (!fs.existsSync(TOOLS)) fs.mkdirSync(TOOLS, { recursive: true });
-
     console.log('');
     log('cloudflared ontbreekt, eenmalig downloaden (ongeveer 40 MB)...');
     await download(CF_URL, CF_BIN);
@@ -268,9 +245,7 @@ function launchTunnel(token) {
     });
 }
 
-/* ------------------------------------------------------------------ *
- * main
- * ------------------------------------------------------------------ */
+/* main */
 
 function shutdown() {
     if (shuttingDown) return;
@@ -278,23 +253,17 @@ function shutdown() {
     console.log('');
     log('stoppen...');
     try { if (tunnel) tunnel.kill(); } catch (err) { /* ignore */ }
-    try { if (agent) agent.kill(); } catch (err) { /* ignore */ }
     setTimeout(function () { process.exit(0); }, 400);
 }
 
-async function main() {
-    const mode = String(process.argv[2] || '').toLowerCase();
+async function startAnywhere(mode) {
+    const chosen = String(mode || '').toLowerCase();
 
     console.log('');
     console.log('  Egodact Remote - overal bereikbaar');
     console.log('  ----------------------------------');
 
-    agent = spawn(process.execPath, [path.join(__dirname, 'server.js')], { stdio: 'inherit', cwd: ROOT });
-    agent.on('exit', function (code) {
-        if (shuttingDown) return;
-        log('agent gestopt (' + code + ')');
-        shutdown();
-    });
+    server.start();
 
     const up = await waitForAgent();
     if (!up) {
@@ -310,36 +279,33 @@ async function main() {
         return;
     }
 
-    if (mode === 'cloudflare') {
-        startCloudflare(token);
-        return;
-    }
-
-    if (mode === 'tailscale') {
+    if (chosen === 'cloudflare') return startCloudflare(token);
+    if (chosen === 'tailscale') {
         const bin = findTailscale();
         if (!bin) {
             log('Tailscale is niet geinstalleerd (https://tailscale.com/download).');
-            startCloudflare(token);
-            return;
+            return startCloudflare(token);
         }
-        runTailscale(bin, token);
-        return;
+        return runTailscale(bin, token);
     }
 
     const bin = findTailscale();
     if (bin) {
         log('Tailscale gevonden, stabiele link wordt gebruikt.');
-        runTailscale(bin, token);
-    } else {
-        log('Tailscale niet gevonden, Cloudflare quick tunnel wordt gebruikt.');
-        startCloudflare(token);
+        return runTailscale(bin, token);
     }
+    log('Tailscale niet gevonden, Cloudflare quick tunnel wordt gebruikt.');
+    return startCloudflare(token);
 }
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
-main().catch(function (err) {
-    console.error(err.stack || err.message);
-    shutdown();
-});
+module.exports = { startAnywhere: startAnywhere };
+
+if (require.main === module) {
+    startAnywhere(process.argv[2]).catch(function (err) {
+        console.error(err.stack || err.message);
+        shutdown();
+    });
+}

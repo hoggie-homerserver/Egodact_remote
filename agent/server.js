@@ -7,8 +7,6 @@
  * extension that runs inside Chrome on this PC.
  *
  *   phone  --HTTP-->  agent  --WebSocket-->  companion  --> chrome.management
- *
- * Run with:  node agent/server.js
  */
 
 const http = require('http');
@@ -17,14 +15,24 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
-const ROOT = path.resolve(__dirname, '..');
-const PUBLIC_DIR = path.join(ROOT, 'public');
-const DATA_DIR = path.join(ROOT, 'data');
+const IS_PKG = typeof process.pkg !== 'undefined';
+const RUNTIME_ROOT = IS_PKG ? path.dirname(process.execPath) : path.resolve(__dirname, '..');
+const BUNDLE_ROOT = path.resolve(__dirname, '..');
+
+function pickDir(preferred, fallback) {
+    try {
+        if (fs.existsSync(path.join(preferred, 'index.html'))) return preferred;
+    } catch (err) { /* ignore */ }
+    return fallback;
+}
+
+const PUBLIC_DIR = pickDir(path.join(RUNTIME_ROOT, 'public'), path.join(BUNDLE_ROOT, 'public'));
+const DATA_DIR = path.join(RUNTIME_ROOT, 'data');
 const TOKEN_FILE = path.join(DATA_DIR, 'token.txt');
 
 const PORT = Number(process.env.EGODACT_REMOTE_PORT || 8787);
 const HOST = process.env.EGODACT_REMOTE_HOST || '0.0.0.0';
-const AGENT_VERSION = '1.0.0';
+const AGENT_VERSION = '1.1.0';
 
 /* ------------------------------------------------------------------ *
  * token
@@ -136,8 +144,6 @@ function dropClient(client) {
     wsClients.delete(client);
     try { client.socket.destroy(); } catch (err) { /* ignore */ }
     if (wsClients.size === 0) {
-        /* no live socket: report offline right away, unless the
-           companion keeps polling over HTTP */
         state.companion.lastSeen = Math.min(state.companion.lastSeen, Date.now() - 60000);
     }
     log('companion-socket gesloten');
@@ -224,7 +230,6 @@ function handleWsMessage(client, text) {
         log('companion verbonden' + (msg.browser ? ' (' + msg.browser + ')' : ''));
         wsSend(client, { type: 'welcome', agentVersion: AGENT_VERSION, now: Date.now() });
 
-        /* commands that were queued while the companion was away */
         const now = Date.now();
         state.commands.forEach(function (c) {
             if (c.status !== 'pending' && c.status !== 'sent') return;
@@ -364,8 +369,6 @@ function authorized(req, url) {
     if (a.length !== b.length) return false;
     return crypto.timingSafeEqual(a, b);
 }
-
-/* failed-token throttle: matters once the agent is reachable from the internet */
 
 const authFailures = new Map();
 const FAILURE_WINDOW = 5 * 60 * 1000;
@@ -662,52 +665,74 @@ server.on('upgrade', function (req, socket) {
 });
 
 /* ------------------------------------------------------------------ *
- * heartbeat (keeps the MV3 service worker alive)
- * ------------------------------------------------------------------ */
-
-setInterval(function () {
-    for (const client of Array.from(wsClients)) {
-        if (client.socket.destroyed || client.socket.writableEnded) {
-            dropClient(client);
-            continue;
-        }
-        wsSend(client, { type: 'heartbeat', t: Date.now() });
-    }
-    prune();
-    if (state.companion.lastSeen && Date.now() - state.companion.lastSeen > 90000) {
-        state.companion.lastSeen = 0;
-        state.companion.extensions = [];
-    }
-}, 12000).unref();
-
-/* ------------------------------------------------------------------ *
  * start
  * ------------------------------------------------------------------ */
 
-server.listen(PORT, HOST, function () {
-    const urls = lanUrls();
-    console.log('');
-    console.log('  Egodact Remote agent v' + AGENT_VERSION + ' draait');
-    console.log('  ------------------------------------------');
-    console.log('  Token: ' + TOKEN);
-    console.log('');
-    urls.forEach(function (base) {
-        console.log('  Telefoon: ' + base + '/?t=' + TOKEN);
-    });
-    if (!urls.length) {
-        console.log('  Telefoon: http://<ip-van-deze-pc>:' + PORT + '/?t=' + TOKEN);
-    }
-    console.log('');
-    console.log('  De companion-extensie moet naar http://127.0.0.1:' + PORT + ' luisteren');
-    console.log('  met dezelfde token. Stoppen met Ctrl+C.');
-    console.log('');
-});
+let started = false;
+let heartbeatTimer = null;
 
-server.on('error', function (err) {
-    if (err.code === 'EADDRINUSE') {
-        console.error('Poort ' + PORT + ' is al in gebruik. Stop het andere proces of zet EGODACT_REMOTE_PORT.');
-    } else {
-        console.error(err);
-    }
-    process.exit(1);
-});
+function start(options) {
+    if (started) return server;
+    started = true;
+    const opts = options || {};
+
+    heartbeatTimer = setInterval(function () {
+        for (const client of Array.from(wsClients)) {
+            if (client.socket.destroyed || client.socket.writableEnded) {
+                dropClient(client);
+                continue;
+            }
+            wsSend(client, { type: 'heartbeat', t: Date.now() });
+        }
+        prune();
+        if (state.companion.lastSeen && Date.now() - state.companion.lastSeen > 90000) {
+            state.companion.lastSeen = 0;
+            state.companion.extensions = [];
+        }
+    }, 12000);
+    if (heartbeatTimer.unref) heartbeatTimer.unref();
+
+    server.listen(PORT, HOST, function () {
+        const urls = lanUrls();
+        console.log('');
+        console.log('  Egodact Remote agent v' + AGENT_VERSION + ' draait');
+        console.log('  ------------------------------------------');
+        console.log('  Token: ' + TOKEN);
+        console.log('');
+        urls.forEach(function (base) {
+            console.log('  Telefoon: ' + base + '/?t=' + TOKEN);
+        });
+        if (!urls.length) {
+            console.log('  Telefoon: http://<ip-van-deze-pc>:' + PORT + '/?t=' + TOKEN);
+        }
+        console.log('');
+        console.log('  De companion-extensie moet naar http://127.0.0.1:' + PORT + ' luisteren');
+        console.log('  met dezelfde token. Stoppen met Ctrl+C.');
+        console.log('');
+        if (typeof opts.onListen === 'function') opts.onListen({ port: PORT, token: TOKEN, urls: urls });
+    });
+
+    server.on('error', function (err) {
+        if (err.code === 'EADDRINUSE') {
+            console.error('Poort ' + PORT + ' is al in gebruik. Stop het andere proces of zet EGODACT_REMOTE_PORT.');
+        } else {
+            console.error(err);
+        }
+        process.exit(1);
+    });
+
+    return server;
+}
+
+module.exports = {
+    start: start,
+    TOKEN: TOKEN,
+    PORT: PORT,
+    AGENT_VERSION: AGENT_VERSION,
+    ROOT: RUNTIME_ROOT,
+    BUNDLE_ROOT: BUNDLE_ROOT,
+    DATA_DIR: DATA_DIR,
+    IS_PKG: IS_PKG
+};
+
+if (require.main === module) start();

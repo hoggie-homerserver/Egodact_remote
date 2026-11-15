@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.EgodactRemote" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#90CAF9</item>
+        <item name="colorPrimaryVariant">#64B5F6</item>
+        <item name="colorOnPrimary">#0D47A1</item>
+        <item name="android:statusBarColor">#212121</item>
+        <item name="android:navigationBarColor">#212121</item>
+        <item name="android:windowBackground">#212121</item>
+    </style>
+</resources>

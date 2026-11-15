@@ -15,7 +15,11 @@ echo Starting Egodact Remote agent...
 echo Keep this window open while you use the phone app.
 echo.
 
-node "agent\server.js"
+if exist "agent\main.js" (
+  node "agent\main.js"
+) else (
+  node "agent\server.js"
+)
 
 echo.
 echo Agent stopped.

@@ -1,4 +1,17 @@
 data/
 tools/
+dist/
+out/
+artifacts/
 node_modules/
 *.log
+android-app/.gradle/
+android-app/build/
+android-app/app/build/
+android-app/local.properties
+android-app/.idea/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db

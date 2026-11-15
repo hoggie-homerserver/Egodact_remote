@@ -1,122 +1,103 @@
 # Egodact Remote
 
-Herlaad de Egodact-extensie en het `app.egodact.com`-tabblad op je PC vanaf je telefoon -
-op je eigen wifi of waar je ook bent.
+Herlaad de Egodact-extensie en `app.egodact.com` op je PC vanaf je telefoon - thuis op wifi of overal via internet.
 
 ```
-telefoon (PWA)  --HTTPS-->  tunnel  -->  agent op je PC  --WebSocket-->  companion  -->  chrome.management
+telefoon (PWA/app) --HTTPS--> tunnel --> agent op je PC --WebSocket--> companion --> chrome.management
 ```
 
-Geen account, geen cloudopslag, geen kosten.
+**Let op:** stock Chrome op Android kan geen extensies draaien. Deze app bestuurt je PC vanaf je telefoon (reload extensies/tabbladen), hij vervangt de extensies op je telefoon niet.
 
-## Wat je krijgt
+## Installeren (GitHub Cloud - echte install)
 
-- **Herstart Egodact** - extensie opnieuw inladen en daarna het Egodact-tabblad verversen.
-- **Extensie / Pagina** - los herladen.
-- **Open Egodact** - tabblad focussen of openen als het dicht is.
-- **Alle extensies** - elke extensie die de companion ziet herladen.
-- Een lijst met alle extensies op je PC (naam, versie, aan/uit) met een herlaadknop per regel.
-- Laatste acties met resultaat, ook als je telefoon even weg was.
+Alles kan door GitHub Actions gebouwd worden, zodat je een echte APK op je telefoon kunt installeren en een `.exe` op je PC.
 
-## Snel starten
+1. Push deze repo naar GitHub (bijv. `hoggie-homerserver/Egodact_remote`).
+2. Ga naar **Actions** -> **Build Egodact Remote** -> **Run workflow** (of push een tag `v1.1.0`).
+3. Download de bestanden bij de aangemaakte **Release**:
+   - `EgodactRemote-Android.apk` -> op je telefoon installeren
+   - `EgodactRemote-PC-win-x64.zip` -> op je PC uitpakken
 
-| Situatie | Commando |
-| --- | --- |
-| Alleen thuis (zelfde wifi) | `start-remote.cmd` |
-| Overal, snelste weg | `start-remote-anywhere.cmd` |
-| Overal, vaste link | Tailscale installeren, dan `start-remote-anywhere.cmd` |
+> Android: sta "installeren vanuit onbekende bron" toe voor je browser/bestanden-app als Android dat vraagt.
 
-Beide printen een link met token. Open die op je telefoon.
+## PC-installatie (exe)
 
-### Eenmalige setup
+1. Pak `EgodactRemote-PC-win-x64.zip` uit in een vaste map, bijv. `C:\EgodactRemote`.
+2. Dubbelklik `start-remote-anywhere.cmd` (overal bereikbaar) of `EgodactRemote.exe` (alleen lokaal).
+   - Bij de eerste keer: Windows Firewall -> sta **privenetwerken** toe.
+   - In *anywhere*-modus downloadt de agent eenmalig `cloudflared.exe` (ca. 40 MB) naar `tools\` als je geen Tailscale hebt.
+3. Laad de companion-extensie eenmalig:
+   - `chrome://extensions` -> **Ontwikkelaarsmodus** aan -> **Load unpacked** -> map `companion`
+   - Open de companion-instellingen, plak de **token** uit de agent-console, klik **Opslaan** -> **Test verbinding**.
+4. Open de geprinte link op je telefoon (of plak hem in de Android-app) en gebruik **Herstart Egodact**.
 
-1. **Agent** - `start-remote.cmd` of `start-remote-anywhere.cmd`. Sta Node.js toe op
-   **privenetwerken** in de Windows Firewall-vraag.
-2. **Companion** - `chrome://extensions` -> Ontwikkelaarsmodus aan -> **Load unpacked** ->
-   map `Egodact_remote\companion`. Plak de token uit de agent-console, **Opslaan**,
-   **Test verbinding**.
-3. **Telefoon** - open de geprinte link in Chrome, menu -> **Toevoegen aan startscherm**.
+### Automatisch starten met Windows
 
-De companion hoeft daarna alleen ingeschakeld te blijven; je hoeft het tabblad niet open te laten.
+In de uitgepakte PC-map:
+
+- `install-autostart.cmd` of `EgodactRemote.exe --install-startup`
+  - maakt een snelkoppeling in je Opstartmap en start Egodact Remote automatisch bij inloggen (`--anywhere`).
+- `uninstall-autostart.cmd` of `EgodactRemote.exe --uninstall-startup` om dit uit te zetten.
+
+## Telefoon-app (APK)
+
+1. Installeer `EgodactRemote-Android.apk` (van GitHub Releases).
+2. Open de app en plak de link die de PC-agent print, bijvoorbeeld:
+   `https://....trycloudflare.com/?t=<token>`
+3. De app onthoudt de link. Met **Andere link instellen** kun je hem wijzigen (handig als je Cloudflare-link verandert).
+
+Je kunt ook de PWA rechtstreeks in Chrome openen via dezelfde link en **Toevoegen aan startscherm** kiezen.
 
 ## Overal bereikbaar
 
-`start-remote-anywhere.cmd` kiest automatisch:
+`start-remote-anywhere.cmd` / `EgodactRemote.exe --anywhere` kiest automatisch:
 
-### 1. Cloudflare quick tunnel (direct, geen account)
+- **Tailscale** (aanbevolen, vaste link): installeer Tailscale op PC + telefoon met hetzelfde account.
+  Eenmalig op de PC: `tailscale serve --bg --https=443 http://127.0.0.1:8787`
+  Dan krijg je een vaste `https://<pc>.<tailnet>.ts.net/?t=...` link.
+- **Cloudflare quick tunnel** (geen account, direct): gratis HTTPS-tunnel; **de link verandert bij elke start**.
+  De nieuwste link staat in `data/public-url.txt`.
 
-Werkt meteen: de agent downloadt eenmalig `cloudflared.exe` (ong. 40 MB) naar `tools\`
-en opent een HTTPS-tunnel. Je krijgt een link als:
+## Vanuit broncode draaien (Node.js)
 
+```powershell
+node agent/main.js                  # lokaal
+node agent/main.js --anywhere       # overal bereikbaar
 ```
-https://mooie-woorden-hier.trycloudflare.com/?t=<token>
-```
 
-- Voordeel: geen account, echt HTTPS, dus de PWA installeert netjes op je startscherm.
-- Nadeel: **de link verandert bij elke herstart.** Handig om te testen, minder voor dagelijks.
-- De tunnel is publiek bereikbaar; de token is de enige sleutel. Daarom blokkeert de agent
-  een IP na 10 foute tokens (10 minuten).
+## Wat je op je telefoon kunt doen
 
-### 2. Tailscale (vaste link, aanbevolen voor dagelijks gebruik)
+- **Herstart Egodact** - extensie opnieuw laden en `app.egodact.com` verversen
+- Extensie / pagina los herladen, Egodact openen
+- Alle extensies op de PC zien en per extensie herladen
+- Actielog met resultaat; opdrachten wachten in de rij als de companion even offline is
 
-1. Installeer Tailscale op je PC en telefoon en log op beide in met hetzelfde account.
-2. Eenmalig HTTPS aanzetten op de PC:
+## Beveiliging
 
-   ```powershell
-   tailscale serve --bg --https=443 http://127.0.0.1:8787
-   ```
-
-3. Start `start-remote-anywhere.cmd`. Je vaste link is dan:
-
-   ```
-   https://<pc-naam>.<tailnet>.ts.net/?t=<token>
-   ```
-
-Die link blijft gelijk, ook na herstarten, en werkt op 4G/5G en elk ander wifi-netwerk.
- zonder poorten open te zetten.
-
-## Hoe het technisch werkt
-
-- De agent luistert op poort `8787` en serveert de PWA plus een klein JSON-API.
-  Alle `/api/*`-routes en de WebSocket eisen de token uit `data/token.txt`.
-- De companion houdt een WebSocket open. De agent stuurt elke 12 s een heartbeat,
-  waardoor de MV3-service-worker blijft leven en opdrachten binnen een seconde aankomen.
-  Lukt de socket niet, dan valt de companion terug op HTTP-polling via een alarm elke 30 s.
-- Herladen van een extensie gebeurt met `chrome.management.setEnabled(id, false)` gevolgd
-  door `setEnabled(id, true)`: Chrome laadt de extensie dan opnieuw van schijf.
-  Daarna ververst de companion het Egodact-tabblad, want content scripts injecteren
-  alleen bij een navigatie.
-- Alles is dependency-vrij: de WebSocket-server is met `net` en `crypto` geschreven.
+- Alle API/WebSocket-aanroepen vereisen de token uit `data/token.txt`.
+- Bij internetbereik blokkeert de agent een IP tijdelijk na 10 foute tokens.
+- Deel je link/token niet; gebruik bij voorkeur Tailscale voor dagelijks gebruik.
 
 ## Bestanden
 
 ```
+agent/main.js            unified entrypoint (server/anywhere/autostart)
 agent/server.js          lokale server + WebSocket-relay
 agent/anywhere.js        tunnel-modus (Tailscale of Cloudflare)
-public/                  PWA (index.html, app.js, styles.css, sw.js, manifest)
-companion/               MV3-extensie met management/tabs-rechten
-data/token.txt           automatisch aangemaakte token (niet committen)
+public/                  PWA
+companion/               MV3 Chrome-extensie (management/tabs)
+android-app/             Android WebView wrapper (APK)
+.github/workflows/       GitHub Actions build (EXE + APK + Release)
+data/token.txt           token (niet committen)
 data/public-url.txt      laatst geprinte publieke link
-tools/cloudflared.exe    eenmalig gedownload door anywhere-modus
-start-remote.cmd         starters
-start-remote-anywhere.cmd
+tools/cloudflared.exe    eenmalig gedownload in anywhere-modus
 ```
-
-## Beperkingen
-
-- Stock Chrome op Android kan **geen** extensies laden; deze app bestuurt je PC vanaf de telefoon.
-- De agent is van jou: deel de link met token niet, en gebruik bij voorkeur Tailscale
-  in plaats van de agent rechtstreeks op het internet te zetten.
 
 ## Problemen oplossen
 
-- **"Token wordt geweigerd"** - token opnieuw uit de agent-console kopieren; hij verandert alleen
-  als je `data/token.txt` verwijdert.
-- **"Companion is offline"** - kijk of de companion-extensie aan staat en of
-  `http://127.0.0.1:8787/api/ping` in de browser van de PC antwoordt.
-- **"Te veel foute pogingen"** - de throttle blokkeert je IP 10 minuten na 10 foute tokens.
-- **Poort bezet** - start met `EGODACT_REMOTE_PORT=8788` (en pas het adres in de companion aan).
-- **Tunnel start niet** - controleer je internet en of `tools\cloudflared.exe` bestaat;
-  verwijder hem anders en start opnieuw.
-- **Extensie niet gevonden** - de knop zoekt op naam (`Egodact`). Gebruik anders de
-  herlaadknop in de extensielijst, die op id werkt.
+- **PC offline in app** - companion aan? `http://127.0.0.1:8787/api/ping` bereikbaar op PC? agent/tunnel nog actief?
+- **Token geweigerd** - token opnieuw uit agent-console kopieren (`data/token.txt`).
+- **Poort bezet** - start met `set EGODACT_REMOTE_PORT=8788` en pas het adres in companion aan.
+- **Cloudflare-link werkt niet meer** - tunnel herstart geeft nieuwe link; pak die uit console of `data/public-url.txt`.
+- **Extensie niet gevonden** - gebruik de herlaadknop bij de extensie in de lijst (op id). "Herstart Egodact" zoekt op naam `Egodact`.
+- **Build faalt in GitHub Actions** - controleer de workflow logs; Android build gebruikt Gradle/Java 17, PC build gebruikt Node + pkg.
